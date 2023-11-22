@@ -13,6 +13,7 @@ app.use(cors());
 app.use(express.json());
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const e = require("express");
 const uri = `mongodb+srv://${process.env.Db_USER}:${process.env.DB_PASS}@cluster0.9zu3h4f.mongodb.net/?retryWrites=true&w=majority`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -32,6 +33,7 @@ async function run() {
     const menuCollection = client.db("bistroBD").collection("menu");
     const reviewsCollection = client.db("bistroBD").collection("reviews");
     const cartsCollection = client.db("bistroBD").collection("carts");
+    const paymentsCollection = client.db("bistroBD").collection("payments");
     const userCollection = client.db("bistroBD").collection("user");
 
     // genaret token
@@ -217,21 +219,68 @@ async function run() {
 
     // payment.............
 
-    app.post("/create-payment-intern", async (req, res) => {
+    // app.post("/create-payment-intern", async (req, res) => {
+    //   const { price } = req.body;
+    //   const amount = parseInt(price * 100);
+    //   console.log(amount, "amount inside then payment");
+    //   const paymentIntern = await  stripe.paymentIntents.create({
+    //     amount: amount,
+    //     currency: "usd",
+    //     payment_method_types: ["card"],
+    //   });
+
+    //   res.send({
+    //     clintSecret: paymentIntern.client_secret,
+    //   });
+    // });
+
+    app.get("/payments/:email", verifyToken, async (req, res) => {
+      const email = req.params.email;
+      const query = {
+        email: email,
+      };
+
+      if (req.params.email !== req.decoded.email) {
+        return req.status(403).send({ message: "forbidden access" });
+      }
+      const result = await paymentsCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    app.post("/create-payment-intent", async (req, res) => {
       const { price } = req.body;
       const amount = parseInt(price * 100);
-      console.log(amount, "amount inside then payment");
-      const paymentIntern = await stripe.paymentInterns.create({
+      console.log(amount, "amount inside the intent");
+
+      const paymentIntent = await stripe.paymentIntents.create({
         amount: amount,
         currency: "usd",
-        payment_method_type: ["card"],
+        payment_method_types: ["card"],
       });
 
+      console.log(paymentIntent.client_secret);
+
       res.send({
-        clintSecret: paymentIntern.client_secret,
+        clientSecret: paymentIntent.client_secret,
       });
     });
 
+    app.post("/payments", async (req, res) => {
+      const payment = req.body;
+      const paymentResult = await paymentsCollection.insertOne(payment);
+      console.log("payments cart......", payment);
+
+      const query = {
+        _id: {
+          $in: payment.cartIds.map((id) => new ObjectId(id)),
+        },
+      };
+
+      const deleteResult = await cartsCollection.deleteMany(query);
+      console.log(deleteResult);
+
+      res.send({ paymentResult, deleteResult });
+    });
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log(
