@@ -240,8 +240,8 @@ async function run() {
         email: email,
       };
 
-      if (req.params.email !== req.decoded.email) {
-        return req.status(403).send({ message: "forbidden access" });
+      if (req.params?.email !== req.decoded?.email) {
+        return res.status(403).send({ message: "forbidden access" });
       }
       const result = await paymentsCollection.find(query).toArray();
       res.send(result);
@@ -281,6 +281,20 @@ async function run() {
 
       res.send({ paymentResult, deleteResult });
     });
+
+    // Stats ........
+
+    app.get("/admin-stats", async (req, res) => {
+      const user = await userCollection.estimatedDocumentCount();
+      const menuItems = await menuCollection.estimatedDocumentCount();
+      const orders = await paymentsCollection.estimatedDocumentCount();
+
+      const payment = await paymentsCollection.find().toArray();
+
+      const revenue = payment.reduce((total, item) => total + item.price, 0);
+      res.send({ user, menuItems, orders, revenue });
+    });
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log(
