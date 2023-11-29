@@ -13,8 +13,7 @@ app.use(cors());
 app.use(express.json());
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
-const e = require("express");
-const uri = `mongodb+srv://${process.env.Db_USER}:${process.env.DB_PASS}@cluster0.9zu3h4f.mongodb.net/?retryWrites=true&w=majority`;
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.9zu3h4f.mongodb.net/?retryWrites=true&w=majority`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
@@ -28,7 +27,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     const menuCollection = client.db("bistroBD").collection("menu");
     const reviewsCollection = client.db("bistroBD").collection("reviews");
@@ -178,7 +177,6 @@ async function run() {
       }
       const query = { email: email };
       const user = await userCollection.findOne(query);
-
       let admin = false;
       if (user) {
         admin = user?.role === "admin";
@@ -284,19 +282,74 @@ async function run() {
 
     // Stats ........
 
-    app.get("/admin-stats", async (req, res) => {
+    app.get("/admin-stats", verifyToken, adminVerify, async (req, res) => {
       const user = await userCollection.estimatedDocumentCount();
       const menuItems = await menuCollection.estimatedDocumentCount();
       const orders = await paymentsCollection.estimatedDocumentCount();
 
-      const payment = await paymentsCollection.find().toArray();
+      // const payment = await paymentsCollection.find().toArray();
+      // const revenue = payment.reduce((total, item) => total + item.price, 0);
 
-      const revenue = payment.reduce((total, item) => total + item.price, 0);
+      const result = await paymentsCollection
+        .aggregate([
+          {
+            $group: {
+              _id: null,
+              totalRevenue: {
+                $sum: "$price",
+              },
+            },
+          },
+        ])
+        .toArray();
+
+      const revenue = result.length > 0 ? result[0].totalRevenue : 0;
       res.send({ user, menuItems, orders, revenue });
     });
 
+    // order status .........
+
+    app.get("/order-stats", async (req, res) => {
+      const result = await paymentsCollection
+        .aggregate([
+          {
+            $unwind: "$menuItemIds",
+          },
+          {
+            $lookup: {
+              from: "menu",
+              localField: "menuItemIds",
+              foreignField: "_id",
+              as: "menuItem",
+            },
+          },
+          {
+            $unwind: "$menuItem",
+          },
+          {
+            $group: {
+              _id: "$menuItem.category",
+              quantity: { $sum: 1 },
+
+              revenue: { $sum: "$menuItem.price" },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              category: "$_id",
+              quantity: "$quantity",
+              revenue: "$revenue",
+            },
+          },
+        ])
+        .toArray();
+
+      res.send(result);
+    });
+
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
+    // await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
     );
